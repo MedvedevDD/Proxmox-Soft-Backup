@@ -1,26 +1,31 @@
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
 
 # Virtual environments
 .venv/
 venv/
+env/
 
 # IDE
 .vscode/
 .idea/
 
 # Build
-dist/
 build/
+dist/
 *.egg-info/
+
+# Test artifacts
+*.psb
+*.psbr
+*.tar.gz
 
 # Logs
 *.log
 
-# Temporary
+# Temp
 *.tmp
 *.bak
 *.old
@@ -28,11 +33,3 @@ build/
 # OS
 Thumbs.db
 .DS_Store
-
-# Test artifacts
-*.psb
-*.psbr
-*.tar.gz
-
-# Local settings
-.env
