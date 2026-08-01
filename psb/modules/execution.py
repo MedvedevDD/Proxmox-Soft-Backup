@@ -36,6 +36,8 @@ INFLUXDB_SERVICES = ("influxdb.service", "influxd.service")
 TELEGRAF_APPLICATION = "telegraf"
 TELEGRAF_COMPONENT = "configuration"
 TELEGRAF_SOURCE = Path("/etc/telegraf")
+TELEGRAF_STATE_COMPONENT = "state"
+TELEGRAF_STATE_SOURCE = Path("/var/lib/telegraf")
 TELEGRAF_SERVICE = "telegraf.service"
 
 NUT_APPLICATION = "nut"
@@ -929,6 +931,29 @@ def execute_influxdb_configuration_recovery(
         services=INFLUXDB_SERVICES,
         lock_schema_version=8,
         staging_prefix=".psb-influxdb-configuration-stage-",
+        interactive=interactive,
+        target_override=target_override,
+        manage_service=manage_service,
+    )
+
+def execute_telegraf_state_recovery(
+    package: Path,
+    rollback_destination: Path,
+    rollback_name: str | None = None,
+    interactive: bool = True,
+    target_override: Path | None = None,
+    manage_service: bool = True,
+) -> dict:
+    return _execute_directory_component_recovery(
+        package=package,
+        rollback_destination=rollback_destination,
+        rollback_name=rollback_name,
+        application=TELEGRAF_APPLICATION,
+        component=TELEGRAF_STATE_COMPONENT,
+        canonical_source=TELEGRAF_STATE_SOURCE,
+        services=(TELEGRAF_SERVICE,),
+        lock_schema_version=9,
+        staging_prefix=".psb-telegraf-state-stage-",
         interactive=interactive,
         target_override=target_override,
         manage_service=manage_service,
