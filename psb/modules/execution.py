@@ -43,6 +43,8 @@ TELEGRAF_SERVICE = "telegraf.service"
 NUT_APPLICATION = "nut"
 NUT_COMPONENT = "configuration"
 NUT_SOURCE = Path("/etc/nut")
+NUT_STATE_COMPONENT = "state"
+NUT_STATE_SOURCE = Path("/var/lib/nut")
 # Stop consumers before providers. Start order is reversed by the generic executor.
 NUT_SERVICES = ("nut-monitor.service", "nut-server.service", "nut-driver.target")
 
@@ -954,6 +956,29 @@ def execute_telegraf_state_recovery(
         services=(TELEGRAF_SERVICE,),
         lock_schema_version=9,
         staging_prefix=".psb-telegraf-state-stage-",
+        interactive=interactive,
+        target_override=target_override,
+        manage_service=manage_service,
+    )
+
+def execute_nut_state_recovery(
+    package: Path,
+    rollback_destination: Path,
+    rollback_name: str | None = None,
+    interactive: bool = True,
+    target_override: Path | None = None,
+    manage_service: bool = True,
+) -> dict:
+    return _execute_directory_component_recovery(
+        package=package,
+        rollback_destination=rollback_destination,
+        rollback_name=rollback_name,
+        application=NUT_APPLICATION,
+        component=NUT_STATE_COMPONENT,
+        canonical_source=NUT_STATE_SOURCE,
+        services=NUT_SERVICES,
+        lock_schema_version=10,
+        staging_prefix=".psb-nut-state-stage-",
         interactive=interactive,
         target_override=target_override,
         manage_service=manage_service,
