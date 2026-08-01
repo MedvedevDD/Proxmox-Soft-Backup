@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+
+# Temporary
+*.tmp
+*.bak
+*.old
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Test artifacts
+*.psb
+*.psbr
+*.tar.gz
+
+# Local settings
+.env
