@@ -32,6 +32,12 @@ TELEGRAF_COMPONENT = "configuration"
 TELEGRAF_SOURCE = Path("/etc/telegraf")
 TELEGRAF_SERVICE = "telegraf.service"
 
+NUT_APPLICATION = "nut"
+NUT_COMPONENT = "configuration"
+NUT_SOURCE = Path("/etc/nut")
+# Stop consumers before providers. Start order is reversed by the generic executor.
+NUT_SERVICES = ("nut-monitor.service", "nut-server.service", "nut-driver.target")
+
 
 def _run(command: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(command, text=True, capture_output=True, check=False)
@@ -616,10 +622,17 @@ def execute_influxdb_database_recovery(
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
-def execute_telegraf_configuration_recovery(
+def _execute_directory_component_recovery(
+    *,
     package: Path,
     rollback_destination: Path,
-    rollback_name: str | None = None,
+    rollback_name: str | None,
+    application: str,
+    component: str,
+    canonical_source: Path,
+    services: tuple[str, ...],
+    lock_schema_version: int,
+    staging_prefix: str,
     interactive: bool = True,
     target_override: Path | None = None,
     manage_service: bool = True,
@@ -637,16 +650,22 @@ def execute_telegraf_configuration_recovery(
         raise RuntimeError("Source backup verification failed: " + "; ".join(messages))
 
     preview = build_recovery_preview(package)
-    selected = _selected_action(preview, TELEGRAF_APPLICATION, TELEGRAF_COMPONENT)
+    selected = _selected_action(preview, application, component)
     sources = [Path(item) for item in selected.get("sources", [])]
-    if sources != [TELEGRAF_SOURCE]:
-        raise RuntimeError(f"Unexpected Telegraf configuration source paths: {sources}")
+    if sources != [canonical_source]:
+        raise RuntimeError(
+            f"Unexpected {application}/{component} source paths: {sources}"
+        )
 
-    target = target_override.resolve() if target_override else TELEGRAF_SOURCE
-    if target_override is None and target != TELEGRAF_SOURCE:
-        raise RuntimeError("Telegraf configuration target validation failed")
+    target = target_override.resolve() if target_override else canonical_source
+    if target_override is None and target != canonical_source:
+        raise RuntimeError(f"{application}/{component} target validation failed")
     if not target.parent.is_dir():
-        raise RuntimeError(f"Telegraf configuration parent directory does not exist: {target.parent}")
+        raise RuntimeError(f"Recovery target parent directory does not exist: {target.parent}")
+    if not target.exists():
+        raise RuntimeError(
+            f"Current target does not exist, so a verified rollback cannot be created: {target}"
+        )
 
     member, artifact_data = _find_artifact(package, selected)
     expected_signature, _, _ = _tar_signature(artifact_data)
@@ -654,37 +673,37 @@ def execute_telegraf_configuration_recovery(
         raise RuntimeError("Unable to calculate backup component signature")
 
     if interactive:
-        _confirm(TELEGRAF_APPLICATION, TELEGRAF_COMPONENT)
+        _confirm(application, component)
 
     operation_id = str(uuid.uuid4())
     operation_started_monotonic = time.monotonic()
     started_at = dt.datetime.now(dt.timezone.utc).isoformat()
-    service_was_active = _service_active(TELEGRAF_SERVICE) if manage_service else False
+    active_services = _active_services(services) if manage_service else []
     parent = target.parent
-    staging = Path(tempfile.mkdtemp(prefix=".psb-telegraf-stage-", dir=parent))
-    old_path = parent / f".psb-telegraf-old-{operation_id}"
+    staging = Path(tempfile.mkdtemp(prefix=staging_prefix, dir=parent))
+    old_path = parent / f".psb-{application}-{component}-old-{operation_id}"
     restored_installed = False
     current_moved = False
     rollback_package: Path | None = None
     lock: dict = {
-        "schema_version": 4,
+        "schema_version": lock_schema_version,
         "state": "preparing",
         "execution_enabled": False,
         "operation_id": operation_id,
-        "application": TELEGRAF_APPLICATION,
-        "component": TELEGRAF_COMPONENT,
+        "application": application,
+        "component": component,
         "source_backup": str(package),
         "artifact_member": member,
         "target": str(target),
         "started_at": started_at,
         "pid": os.getpid(),
-        "service_active_before": service_was_active,
+        "services_active_before": active_services,
     }
     _write_lock(lock)
 
     try:
-        if manage_service and service_was_active:
-            _service_stop(TELEGRAF_SERVICE)
+        if manage_service and active_services:
+            _stop_services(active_services)
 
         selected_for_rollback = json.loads(json.dumps(selected))
         selected_for_rollback["sources"] = [str(target)]
@@ -694,7 +713,9 @@ def execute_telegraf_configuration_recovery(
         )
         rollback_ok, rollback_messages = verify_backup(rollback_package)
         if not rollback_ok:
-            raise RuntimeError("Rollback verification failed: " + "; ".join(rollback_messages))
+            raise RuntimeError(
+                "Rollback verification failed: " + "; ".join(rollback_messages)
+            )
 
         lock.update({
             "state": "executing",
@@ -705,60 +726,65 @@ def execute_telegraf_configuration_recovery(
         })
         _write_lock(lock)
 
-        restored = _safe_extract_tar(artifact_data, staging, TELEGRAF_SOURCE)
-        if target.exists():
-            target.rename(old_path)
-            current_moved = True
+        restored = _safe_extract_tar(artifact_data, staging, canonical_source)
+        target.rename(old_path)
+        current_moved = True
         restored.rename(target)
         restored_installed = True
 
-        installed_signature = _directory_signature_as_source(target, TELEGRAF_SOURCE)
+        installed_signature = _directory_signature_as_source(target, canonical_source)
         if installed_signature != expected_signature:
-            raise RuntimeError("Installed Telegraf configuration checksum does not match backup artifact")
+            raise RuntimeError(
+                f"Installed {application}/{component} checksum does not match backup artifact"
+            )
 
-        if manage_service and service_was_active:
-            _service_start(TELEGRAF_SERVICE)
+        if manage_service and active_services:
+            # Providers are typically listed after consumers, so restart in reverse order.
+            _start_services(list(reversed(active_services)))
 
-        if current_moved and old_path.exists():
+        if old_path.exists():
             shutil.rmtree(old_path)
-            current_moved = False
+        current_moved = False
 
         duration = round(time.monotonic() - operation_started_monotonic, 3)
-        service_active_after = _service_active(TELEGRAF_SERVICE) if manage_service else None
+        active_after = _active_services(services) if manage_service else []
         lock.update({
             "state": "completed",
             "execution_enabled": False,
             "completed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-            "service_active_after": service_active_after,
+            "services_active_after": active_after,
             "duration_seconds": duration,
         })
         _write_lock(lock)
         return {
             "status": "completed",
             "operation_id": operation_id,
-            "application": TELEGRAF_APPLICATION,
-            "component": TELEGRAF_COMPONENT,
+            "application": application,
+            "component": component,
             "backup": str(package),
             "rollback_package": str(rollback_package),
             "rollback_verified": True,
             "target": str(target),
-            "service_was_active": service_was_active,
-            "service_active_after": service_active_after,
+            "services_active_before": active_services,
+            "services_active_after": active_after,
+            "service_active_after": all(
+                _service_active(service) for service in active_services
+            ) if manage_service else None,
             "duration_seconds": duration,
             "lock_path": str(RECOVERY_LOCK),
         }
     except Exception as exc:
         rollback_error = None
         try:
-            if manage_service and _service_active(TELEGRAF_SERVICE):
-                _service_stop(TELEGRAF_SERVICE)
+            for service in _active_services(services):
+                _service_stop(service)
             if restored_installed and target.exists():
                 shutil.rmtree(target)
             if current_moved and old_path.exists():
                 old_path.rename(target)
                 current_moved = False
-            if manage_service and service_was_active:
-                _service_start(TELEGRAF_SERVICE)
+            if manage_service and active_services:
+                _start_services(list(reversed(active_services)))
         except Exception as rollback_exc:
             rollback_error = str(rollback_exc)
 
@@ -776,6 +802,56 @@ def execute_telegraf_configuration_recovery(
             raise RuntimeError(
                 f"Recovery failed: {exc}; automatic rollback also failed: {rollback_error}"
             ) from exc
-        raise RuntimeError(f"Recovery failed and previous state was restored: {exc}") from exc
+        raise RuntimeError(
+            f"Recovery failed and previous state was restored: {exc}"
+        ) from exc
     finally:
         shutil.rmtree(staging, ignore_errors=True)
+
+
+def execute_telegraf_configuration_recovery(
+    package: Path,
+    rollback_destination: Path,
+    rollback_name: str | None = None,
+    interactive: bool = True,
+    target_override: Path | None = None,
+    manage_service: bool = True,
+) -> dict:
+    return _execute_directory_component_recovery(
+        package=package,
+        rollback_destination=rollback_destination,
+        rollback_name=rollback_name,
+        application=TELEGRAF_APPLICATION,
+        component=TELEGRAF_COMPONENT,
+        canonical_source=TELEGRAF_SOURCE,
+        services=(TELEGRAF_SERVICE,),
+        lock_schema_version=4,
+        staging_prefix=".psb-telegraf-stage-",
+        interactive=interactive,
+        target_override=target_override,
+        manage_service=manage_service,
+    )
+
+
+def execute_nut_configuration_recovery(
+    package: Path,
+    rollback_destination: Path,
+    rollback_name: str | None = None,
+    interactive: bool = True,
+    target_override: Path | None = None,
+    manage_service: bool = True,
+) -> dict:
+    return _execute_directory_component_recovery(
+        package=package,
+        rollback_destination=rollback_destination,
+        rollback_name=rollback_name,
+        application=NUT_APPLICATION,
+        component=NUT_COMPONENT,
+        canonical_source=NUT_SOURCE,
+        services=NUT_SERVICES,
+        lock_schema_version=5,
+        staging_prefix=".psb-nut-stage-",
+        interactive=interactive,
+        target_override=target_override,
+        manage_service=manage_service,
+    )

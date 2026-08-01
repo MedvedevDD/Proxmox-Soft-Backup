@@ -9,7 +9,7 @@ from .modules.host import host_inventory
 from .modules.compare import compare_targets, print_compare_report
 from .modules.recovery import build_recovery_preview, print_recovery_preview, write_recovery_plan
 from .modules.rollback import create_rollback_package
-from .modules.execution import execute_grafana_database_recovery, execute_influxdb_database_recovery, execute_telegraf_configuration_recovery, read_recovery_lock, abort_recovery_lock
+from .modules.execution import execute_grafana_database_recovery, execute_influxdb_database_recovery, execute_telegraf_configuration_recovery, execute_nut_configuration_recovery, read_recovery_lock, abort_recovery_lock
 VERSION="0.9.4"
 
 def require_root(command):
@@ -83,11 +83,13 @@ def recovery_doctor():
     add('grafana data directory', Path('/var/lib/grafana').is_dir(), '/var/lib/grafana')
     add('influxdb service definition', any(Path(path).exists() for path in ('/lib/systemd/system/influxdb.service','/etc/systemd/system/influxdb.service','/etc/systemd/system/influxd.service')), 'influxdb.service or influxd.service')
     add('influxdb data directory', Path('/var/lib/influxdb').is_dir(), '/var/lib/influxdb')
+    add('nut service definition', any(Path(path).exists() for path in ('/lib/systemd/system/nut-monitor.service','/etc/systemd/system/nut-monitor.service')), 'nut-monitor.service')
+    add('nut configuration directory', Path('/etc/nut').is_dir(), '/etc/nut')
     add('state directory writable', os.access('/var/lib/proxmox-soft-backup', os.W_OK) if Path('/var/lib/proxmox-soft-backup').exists() else os.access('/var/lib', os.W_OK), '/var/lib/proxmox-soft-backup')
     lock=read_recovery_lock()
     add('recovery lock clear', lock is None, 'clear' if lock is None else f"state={lock.get('state','unknown')}")
     overall=all(c['ok'] for c in checks)
-    return {'area':'recovery','ready':overall,'checks':checks,'supported_execute_targets':['grafana/database','influxdb/database','telegraf/configuration']}
+    return {'area':'recovery','ready':overall,'checks':checks,'supported_execute_targets':['grafana/database','influxdb/database','telegraf/configuration','nut/configuration']}
 
 def main():
     args=parser().parse_args(); require_root(args.command)
@@ -129,7 +131,7 @@ def main():
                 print('\nPSB Recovery Doctor'); print('-'*88)
                 for c in report['checks']: print(f"{'PASS' if c['ok'] else 'FAIL':4}  {c['name']}: {c['detail']}")
                 print(f"\nRecovery ready: {'YES' if report['ready'] else 'NO'}")
-                print('Supported execute targets: grafana/database, influxdb/database, telegraf/configuration')
+                print('Supported execute targets: grafana/database, influxdb/database, telegraf/configuration, nut/configuration')
             return 0 if report['ready'] else 1
         report=doctor(scan_system())
         if args.json: print(json.dumps(report,indent=2))
@@ -197,9 +199,9 @@ def main():
         return 0
     if args.command=='recover':
         if args.execute:
-            supported={("grafana","database"),("influxdb","database"),("telegraf","configuration")}
+            supported={("grafana","database"),("influxdb","database"),("telegraf","configuration"),("nut","configuration")}
             if (args.application,args.component) not in supported:
-                print('ERROR: execute mode supports only grafana/database, influxdb/database, and telegraf/configuration',file=sys.stderr); return 2
+                print('ERROR: execute mode supports only grafana/database, influxdb/database, telegraf/configuration, and nut/configuration',file=sys.stderr); return 2
             if not args.rollback_destination:
                 print('ERROR: --rollback-destination is required with --execute',file=sys.stderr); return 2
             if args.json or args.output or args.create_rollback or args.no_recovery_lock:
@@ -209,6 +211,7 @@ def main():
                     ("grafana","database"): execute_grafana_database_recovery,
                     ("influxdb","database"): execute_influxdb_database_recovery,
                     ("telegraf","configuration"): execute_telegraf_configuration_recovery,
+                    ("nut","configuration"): execute_nut_configuration_recovery,
                 }
                 result=executors[(args.application,args.component)](Path(args.backup_path),Path(args.rollback_destination),args.rollback_name)
             except RuntimeError as exc:
