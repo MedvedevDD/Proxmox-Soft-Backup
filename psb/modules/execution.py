@@ -29,6 +29,8 @@ GRAFANA_SERVICE = "grafana-server.service"
 INFLUXDB_APPLICATION = "influxdb"
 INFLUXDB_COMPONENT = "database"
 INFLUXDB_SOURCE = Path("/var/lib/influxdb")
+INFLUXDB_CONFIGURATION_COMPONENT = "configuration"
+INFLUXDB_CONFIGURATION_SOURCE = Path("/etc/influxdb")
 INFLUXDB_SERVICES = ("influxdb.service", "influxd.service")
 
 TELEGRAF_APPLICATION = "telegraf"
@@ -903,6 +905,30 @@ def execute_grafana_plugins_recovery(
         services=(GRAFANA_SERVICE,),
         lock_schema_version=7,
         staging_prefix=".psb-grafana-plugins-stage-",
+        interactive=interactive,
+        target_override=target_override,
+        manage_service=manage_service,
+    )
+
+
+def execute_influxdb_configuration_recovery(
+    package: Path,
+    rollback_destination: Path,
+    rollback_name: str | None = None,
+    interactive: bool = True,
+    target_override: Path | None = None,
+    manage_service: bool = True,
+) -> dict:
+    return _execute_directory_component_recovery(
+        package=package,
+        rollback_destination=rollback_destination,
+        rollback_name=rollback_name,
+        application=INFLUXDB_APPLICATION,
+        component=INFLUXDB_CONFIGURATION_COMPONENT,
+        canonical_source=INFLUXDB_CONFIGURATION_SOURCE,
+        services=INFLUXDB_SERVICES,
+        lock_schema_version=8,
+        staging_prefix=".psb-influxdb-configuration-stage-",
         interactive=interactive,
         target_override=target_override,
         manage_service=manage_service,
