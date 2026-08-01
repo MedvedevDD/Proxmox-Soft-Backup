@@ -1,117 +1,51 @@
-# Proxmox Soft Backup 0.9.2
+# Proxmox Soft Backup (PSB)
 
-PSB 0.9.2 introduces the first narrowly-scoped Safe Recovery executor.
+## Что такое PSB
 
-## Supported execute target
+Proxmox Soft Backup (PSB) — инструмент резервного копирования и восстановления приложений и конфигурации хоста Proxmox VE.
 
-Only this target is enabled:
+В отличие от резервного копирования виртуальных машин, PSB сохраняет именно инфраструктуру сервера:
 
-- application: `grafana`
-- component: `database`
-- source/target: `/var/lib/grafana`
-- service: `grafana-server.service`
+- Grafana
+- InfluxDB
+- Telegraf
+- NUT
+- MegaRAID Management
+- Home Server Monitor
+- и другие поддерживаемые приложения
 
-All other applications, components, and host configuration remain preview-only.
+PSB не предназначен для резервного копирования виртуальных машин и контейнеров.
 
-## Install
+---
 
-```bash
-chmod +x install.sh
-./install.sh
-psb --version
-```
+## Основные возможности
 
-## Preview
+- Автоматическое обнаружение приложений
+- Резервное копирование приложений
+- Резервное копирование конфигурации Proxmox
+- Проверка целостности резервной копии
+- Compare (поиск отличий между backup и текущей системой)
+- Preview Recovery
+- Safe Recovery
+- Rollback
+- Recovery Doctor
 
-```bash
-psb recover /path/to/backup.psb
-```
+---
 
-## Safe execution
+## Статус проекта
 
-First inspect and clear any previous test lock:
+Проект находится в активной разработке.
 
-```bash
-psb recovery-status
-psb recovery-abort
-```
+Текущая кодовая база уже протестирована на реальном сервере Proxmox VE.
 
-Then run:
+---
 
-```bash
-psb recover /path/to/backup.psb \
-  --application grafana \
-  --component database \
-  --execute \
-  --rollback-destination /path/to/rollback-storage
-```
+## Документация
 
-PSB will:
+Подробная документация находится в каталоге **docs**.
 
-1. Verify the source backup.
-2. Rebuild the recovery preview.
-3. Select exactly one Grafana database component.
-4. Create and verify a rollback `.psbr` from the current `/var/lib/grafana`.
-5. Re-check that the source and current state did not change.
-6. Require three interactive confirmations.
-7. Stop `grafana-server.service` if it was active.
-8. Install the backed-up Grafana database directory.
-9. Verify the installed component checksum before restarting Grafana.
-10. Start Grafana and check service state.
-11. Record the completed operation in `recovery.lock`.
+---
 
-If any step fails after the current directory was moved, PSB automatically restores the previous directory and restarts Grafana.
+## Лицензия
 
-## Required confirmations
-
-The operator must type exactly:
-
-```text
-YES
-RESTORE
-RESTORE GRAFANA DATABASE
-```
-
-Execution requires an interactive terminal. There is no non-interactive bypass in 0.9.2.
-
-## Recovery lock
-
-```bash
-psb recovery-status
-psb recovery-abort
-```
-
-`recovery-abort` removes only the lock. It never deletes rollback packages.
-
-## Safety boundaries
-
-- One component per run.
-- No host recovery.
-- No InfluxDB recovery.
-- No force mode.
-- No identical-file overwrite mode yet.
-- Existing recovery lock blocks a new execution.
-- Rollback must be created and verified before confirmations and system modification.
-
-## v0.9.4 Recovery Stabilization
-
-- Grafana HTTP health uses Python urllib only; external curl is not used.
-- Health check retries for up to 30 seconds and records attempts and wait time.
-- Recovery lock and result record operation duration.
-- New command: `psb doctor recovery` (or `--json`).
-- Safe execute scope remains limited to `grafana/database`.
-
-
-## InfluxDB database Safe Recovery
-
-Version 0.9.4 adds the second production-gated execution target:
-
-```bash
-psb recover BACKUP.psb \
-  --application influxdb \
-  --component database \
-  --execute \
-  --rollback-destination /mnt/4ProxmoxBackup
-```
-
-The exact third confirmation is `RESTORE INFLUXDB DATABASE`. InfluxDB services that were active before recovery are stopped before the rollback snapshot, restarted afterward, and checked through `http://127.0.0.1:8086/ping` using Python urllib. All other components remain preview-only.
+MIT
