@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "id": "megaraid",
+  "display_name": "MegaRAID Management",
+  "category": "Storage",
+  "dependencies": [],
+  "detection": {
+    "packages": [
+      "storcli",
+      "lsistorageauthority",
+      "lsa-lib-utils",
+      "lsa-lib-utils2"
+    ],
+    "services": [
+      "LSISA.service",
+      "LsiSASH.service",
+      "3dm2.service",
+      "tdm2.service"
+    ],
+    "binaries": [
+      "storcli",
+      "storcli64"
+    ]
+  },
+  "components": [
+    {
+      "path": "/opt/MegaRAID",
+      "importance": "critical",
+      "kind": "application"
+    },
+    {
+      "path": "/opt/lsi",
+      "importance": "critical",
+      "kind": "application"
+    },
+    {
+      "path": "/etc/lsi",
+      "importance": "critical",
+      "kind": "configuration",
+      "required": false
+    },
+    {
+      "path": "/etc/init.d/LsiSASH",
+      "importance": "critical",
+      "kind": "service"
+    },
+    {
+      "path": "/etc/init.d/tdm2",
+      "importance": "critical",
+      "kind": "service"
+    },
+    {
+      "path": "/var/log/lsi",
+      "importance": "optional",
+      "kind": "logs"
+    }
+  ],
+  "version_detection": {
+    "commands": [
+      [
+        "storcli",
+        "-v"
+      ],
+      [
+        "/usr/local/bin/storcli",
+        "-v"
+      ]
+    ]
+  }
+}

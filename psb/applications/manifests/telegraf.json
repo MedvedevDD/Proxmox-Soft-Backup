@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "id": "telegraf",
+  "display_name": "Telegraf",
+  "category": "Monitoring",
+  "dependencies": [
+    "influxdb"
+  ],
+  "detection": {
+    "packages": [
+      "telegraf"
+    ],
+    "services": [
+      "telegraf.service"
+    ],
+    "binaries": [
+      "telegraf"
+    ]
+  },
+  "components": [
+    {
+      "path": "/etc/telegraf",
+      "importance": "critical",
+      "kind": "configuration"
+    },
+    {
+      "path": "/etc/systemd/system/telegraf.service",
+      "importance": "critical",
+      "kind": "systemd"
+    },
+    {
+      "path": "/etc/systemd/system/telegraf.service.d",
+      "importance": "critical",
+      "kind": "systemd",
+      "required": false,
+      "weight": 0
+    },
+    {
+      "path": "/var/lib/telegraf",
+      "importance": "important",
+      "kind": "state"
+    },
+    {
+      "path": "/var/log/telegraf",
+      "importance": "optional",
+      "kind": "logs"
+    }
+  ],
+  "version_detection": {
+    "commands": [
+      [
+        "telegraf",
+        "--version"
+      ]
+    ]
+  }
+}

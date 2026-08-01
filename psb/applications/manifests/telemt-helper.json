@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "id": "telemt-helper",
+  "display_name": "Telemt Stats Helper",
+  "category": "Proxy",
+  "dependencies": [
+    "telemt-server"
+  ],
+  "detection": {
+    "packages": [],
+    "services": [
+      "telemt-stats-helper.service"
+    ],
+    "binaries": [
+      "telemt-stats-helper",
+      "/opt/telemt-stats-helper"
+    ]
+  },
+  "components": [
+    {
+      "path": "/opt/telemt-stats-helper",
+      "importance": "critical",
+      "kind": "application"
+    },
+    {
+      "path": "/usr/local/bin/telemt-stats-helper",
+      "importance": "critical",
+      "kind": "binary"
+    },
+    {
+      "path": "/etc/systemd/system/telemt-stats-helper.service",
+      "importance": "critical",
+      "kind": "systemd"
+    },
+    {
+      "path": "/etc/systemd/system/telemt-stats-helper.service.d",
+      "importance": "critical",
+      "kind": "systemd"
+    },
+    {
+      "path": "/var/lib/telemt-stats-helper",
+      "importance": "important",
+      "kind": "state"
+    }
+  ]
+}

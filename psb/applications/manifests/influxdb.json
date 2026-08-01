@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "id": "influxdb",
+  "display_name": "InfluxDB",
+  "category": "Monitoring",
+  "dependencies": [],
+  "detection": {
+    "packages": [
+      "influxdb",
+      "influxdb2"
+    ],
+    "services": [
+      "influxdb.service",
+      "influxd.service"
+    ],
+    "binaries": [
+      "influxd"
+    ]
+  },
+  "components": [
+    {
+      "path": "/etc/influxdb",
+      "importance": "critical",
+      "kind": "configuration",
+      "version_families": [
+        "v1"
+      ],
+      "weight": 35
+    },
+    {
+      "path": "/etc/influxdb2",
+      "importance": "critical",
+      "kind": "configuration",
+      "version_families": [
+        "v2",
+        "v3"
+      ],
+      "weight": 35
+    },
+    {
+      "path": "/var/lib/influxdb",
+      "importance": "critical",
+      "kind": "database",
+      "version_families": [
+        "v1"
+      ],
+      "weight": 45
+    },
+    {
+      "path": "/var/lib/influxdb2",
+      "importance": "critical",
+      "kind": "database",
+      "version_families": [
+        "v2",
+        "v3"
+      ],
+      "weight": 45
+    },
+    {
+      "path": "/root/.influxdbv2",
+      "importance": "critical",
+      "kind": "credentials",
+      "version_families": [
+        "v2",
+        "v3"
+      ],
+      "weight": 20
+    },
+    {
+      "path": "/var/log/influxdb",
+      "importance": "optional",
+      "kind": "logs",
+      "version_families": [
+        "v1"
+      ]
+    }
+  ],
+  "version_detection": {
+    "commands": [
+      [
+        "influxd",
+        "version"
+      ],
+      [
+        "influxd",
+        "--version"
+      ]
+    ],
+    "families": [
+      {
+        "id": "v1",
+        "min_major": 1,
+        "max_major": 1
+      },
+      {
+        "id": "v2",
+        "min_major": 2,
+        "max_major": 2
+      },
+      {
+        "id": "v3",
+        "min_major": 3
+      }
+    ]
+  }
+}

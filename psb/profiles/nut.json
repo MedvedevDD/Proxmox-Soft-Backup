@@ -1,0 +1,11 @@
+{
+  "name": "nut",
+  "description": "Network UPS Tools configuration",
+  "packages": ["nut", "nut-client", "nut-server"],
+  "services": ["nut-monitor.service", "nut-server.service", "nut-driver.target"],
+  "paths": [
+    "/etc/nut",
+    "/etc/systemd/system/nut-monitor.service.d",
+    "/etc/systemd/system/nut-server.service.d"
+  ]
+}

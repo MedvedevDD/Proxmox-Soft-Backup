@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "id": "home-server-monitor",
+  "display_name": "Home Server Monitor",
+  "category": "Monitoring",
+  "dependencies": [
+    "telegraf"
+  ],
+  "detection": {
+    "packages": [],
+    "services": [
+      "home-server-monitor.service",
+      "homeservermonitor.service",
+      "hsm-collector.service"
+    ],
+    "binaries": [
+      "home-server-monitor",
+      "collector.py"
+    ]
+  },
+  "components": [
+    {
+      "path": "/opt/home-server-monitor",
+      "importance": "critical",
+      "kind": "application"
+    },
+    {
+      "path": "/opt/Home_Server_Monitor",
+      "importance": "critical",
+      "kind": "application",
+      "required": false
+    },
+    {
+      "path": "/etc/home-server-monitor",
+      "importance": "critical",
+      "kind": "configuration",
+      "required": false
+    },
+    {
+      "path": "/var/lib/home-server-monitor",
+      "importance": "critical",
+      "kind": "state",
+      "required": false
+    },
+    {
+      "path": "/etc/systemd/system/home-server-monitor.service",
+      "importance": "critical",
+      "kind": "systemd",
+      "required": false
+    },
+    {
+      "path": "/root/Home_Server_Monitor-7.8.1-beta.1",
+      "importance": "important",
+      "kind": "source"
+    }
+  ],
+  "version_detection": {
+    "path_patterns": [
+      {
+        "glob": "/root/Home_Server_Monitor-*",
+        "regex": "Home_Server_Monitor-(.+)$"
+      }
+    ]
+  }
+}

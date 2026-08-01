@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "id": "nut",
+  "display_name": "Network UPS Tools",
+  "category": "UPS",
+  "dependencies": [],
+  "detection": {
+    "packages": [
+      "nut",
+      "nut-client",
+      "nut-server"
+    ],
+    "services": [
+      "nut-monitor.service",
+      "nut-server.service",
+      "nut-driver.target"
+    ],
+    "binaries": [
+      "upsd",
+      "upsmon"
+    ]
+  },
+  "components": [
+    {
+      "path": "/etc/nut",
+      "importance": "critical",
+      "kind": "configuration"
+    },
+    {
+      "path": "/etc/systemd/system/nut-driver@ippon.service.d",
+      "importance": "critical",
+      "kind": "systemd"
+    },
+    {
+      "path": "/var/lib/nut",
+      "importance": "important",
+      "kind": "state"
+    },
+    {
+      "path": "/var/log/nut",
+      "importance": "optional",
+      "kind": "logs"
+    }
+  ],
+  "version_detection": {
+    "commands": [
+      [
+        "upsd",
+        "-V"
+      ],
+      [
+        "upsmon",
+        "-V"
+      ]
+    ]
+  }
+}

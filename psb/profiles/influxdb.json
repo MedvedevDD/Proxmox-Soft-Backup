@@ -1,0 +1,14 @@
+{
+  "name": "influxdb",
+  "description": "InfluxDB configuration and local data",
+  "packages": ["influxdb", "influxdb2"],
+  "services": ["influxdb.service"],
+  "paths": [
+    "/etc/influxdb",
+    "/etc/influxdb2",
+    "/var/lib/influxdb",
+    "/var/lib/influxdb2",
+    "/var/log/influxdb",
+    "/etc/systemd/system/influxdb.service.d"
+  ]
+}

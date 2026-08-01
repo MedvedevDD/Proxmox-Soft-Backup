@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "id": "grafana",
+  "display_name": "Grafana",
+  "category": "Monitoring",
+  "dependencies": [
+    "influxdb"
+  ],
+  "detection": {
+    "packages": [
+      "grafana",
+      "grafana-enterprise"
+    ],
+    "services": [
+      "grafana-server.service"
+    ],
+    "binaries": [
+      "grafana-server"
+    ]
+  },
+  "components": [
+    {
+      "path": "/etc/grafana",
+      "importance": "critical",
+      "kind": "configuration"
+    },
+    {
+      "path": "/var/lib/grafana",
+      "importance": "critical",
+      "kind": "database"
+    },
+    {
+      "path": "/etc/systemd/system/grafana-server.service.d",
+      "importance": "critical",
+      "kind": "systemd",
+      "required": false,
+      "weight": 0
+    },
+    {
+      "path": "/var/lib/grafana/plugins",
+      "importance": "important",
+      "kind": "plugins"
+    },
+    {
+      "path": "/var/log/grafana",
+      "importance": "optional",
+      "kind": "logs"
+    }
+  ],
+  "version_detection": {
+    "commands": [
+      [
+        "grafana-server",
+        "-v"
+      ],
+      [
+        "grafana",
+        "-v"
+      ]
+    ]
+  }
+}

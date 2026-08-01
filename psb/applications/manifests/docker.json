@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "id": "docker",
+  "display_name": "Docker",
+  "category": "Containers",
+  "dependencies": [],
+  "detection": {
+    "packages": [
+      "docker-ce",
+      "docker.io"
+    ],
+    "services": [
+      "docker.service"
+    ],
+    "binaries": [
+      "docker"
+    ]
+  },
+  "components": [
+    {
+      "path": "/etc/docker",
+      "importance": "critical",
+      "kind": "configuration"
+    },
+    {
+      "path": "/var/lib/docker/volumes",
+      "importance": "critical",
+      "kind": "volumes"
+    },
+    {
+      "path": "/opt/stacks",
+      "importance": "important",
+      "kind": "compose"
+    },
+    {
+      "path": "/srv/docker",
+      "importance": "important",
+      "kind": "compose"
+    },
+    {
+      "path": "/var/log/docker",
+      "importance": "optional",
+      "kind": "logs"
+    }
+  ],
+  "version_detection": {
+    "commands": [
+      [
+        "docker",
+        "--version"
+      ]
+    ]
+  }
+}

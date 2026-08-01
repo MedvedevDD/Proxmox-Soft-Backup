@@ -1,0 +1,13 @@
+{
+  "name": "docker",
+  "description": "Docker engine configuration and compose definitions",
+  "packages": ["docker-ce", "docker.io"],
+  "services": ["docker.service"],
+  "paths": [
+    "/etc/docker",
+    "/opt/docker",
+    "/opt/compose",
+    "/root/docker-compose.yml",
+    "/root/compose.yml"
+  ]
+}

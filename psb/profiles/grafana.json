@@ -1,0 +1,12 @@
+{
+  "name": "grafana",
+  "description": "Grafana configuration, plugins, and local data",
+  "packages": ["grafana", "grafana-enterprise"],
+  "services": ["grafana-server.service"],
+  "paths": [
+    "/etc/grafana",
+    "/var/lib/grafana",
+    "/var/log/grafana",
+    "/etc/systemd/system/grafana-server.service.d"
+  ]
+}

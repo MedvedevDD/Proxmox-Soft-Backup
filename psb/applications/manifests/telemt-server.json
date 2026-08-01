@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "id": "telemt-server",
+  "display_name": "Telemt Server",
+  "category": "Proxy",
+  "dependencies": [],
+  "detection": {
+    "packages": [],
+    "services": [
+      "telemt.service"
+    ],
+    "binaries": [
+      "telemt"
+    ]
+  },
+  "components": [
+    {
+      "path": "/etc/telemt",
+      "importance": "critical",
+      "kind": "configuration"
+    },
+    {
+      "path": "/opt/telemt",
+      "importance": "critical",
+      "kind": "application"
+    },
+    {
+      "path": "/usr/local/bin/telemt",
+      "importance": "critical",
+      "kind": "binary"
+    },
+    {
+      "path": "/var/lib/telemt",
+      "importance": "critical",
+      "kind": "state"
+    },
+    {
+      "path": "/etc/systemd/system/telemt.service",
+      "importance": "critical",
+      "kind": "systemd"
+    },
+    {
+      "path": "/root/telemt.limit.json",
+      "importance": "critical",
+      "kind": "quota_state"
+    },
+    {
+      "path": "/var/log/telemt",
+      "importance": "optional",
+      "kind": "logs"
+    }
+  ]
+}
