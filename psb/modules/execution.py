@@ -1,7 +1,6 @@
 import datetime as dt
 import json
 import os
-import hashlib
 import shutil
 import subprocess
 import tarfile
@@ -12,6 +11,7 @@ import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
 
+from .checksums import sha256_file
 from .compare import _hash_parts, _ignored, _tar_signature
 from .recovery import build_recovery_preview
 from .rollback import RECOVERY_LOCK, ROLLBACK_STATE_DIR, create_rollback_package
@@ -146,11 +146,7 @@ def _directory_signature_as_source(root: Path, canonical: Path) -> str | None:
         elif item.is_dir():
             parts.append(f"D|{relative}")
         elif item.is_file():
-            digest = hashlib.sha256()
-            with item.open("rb") as handle:
-                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                    digest.update(chunk)
-            parts.append(f"F|{relative}|{digest.hexdigest()}")
+            parts.append(f"F|{relative}|{sha256_file(item)}")
     return _hash_parts(parts) if parts else None
 
 def _confirm(application: str, component: str) -> None:

@@ -7,6 +7,7 @@ import tarfile
 import zipfile
 from pathlib import Path
 
+from .checksums import sha256_file, sha256_stream
 from .host import host_inventory
 from .scanner import scan_system
 
@@ -89,11 +90,7 @@ def _current_signature(paths: list[str], ignore_runtime: bool = True) -> tuple[s
                 elif item.is_dir():
                     parts.append(f"D|{relative}")
                 elif item.is_file():
-                    digest = hashlib.sha256()
-                    with item.open("rb") as handle:
-                        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                            digest.update(chunk)
-                    parts.append(f"F|{relative}|{digest.hexdigest()}")
+                    parts.append(f"F|{relative}|{sha256_file(item)}")
             except (OSError, PermissionError) as exc:
                 parts.append(f"E|{relative}|{type(exc).__name__}")
     return (_hash_parts(parts) if parts else None), len(parts), ignored
@@ -114,11 +111,8 @@ def _tar_signature(data: bytes, ignore_runtime: bool = True) -> tuple[str | None
                 parts.append(f"D|{name}")
             elif member.isfile():
                 extracted = archive.extractfile(member)
-                digest = hashlib.sha256()
-                if extracted:
-                    for chunk in iter(lambda: extracted.read(1024 * 1024), b""):
-                        digest.update(chunk)
-                parts.append(f"F|{name}|{digest.hexdigest()}")
+                digest = sha256_stream(extracted) if extracted else hashlib.sha256().hexdigest()
+                parts.append(f"F|{name}|{digest}")
     return (_hash_parts(parts) if parts else None), len(parts), ignored
 
 
