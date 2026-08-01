@@ -20,6 +20,8 @@ from .verify import verify_backup
 GRAFANA_APPLICATION = "grafana"
 GRAFANA_COMPONENT = "database"
 GRAFANA_SOURCE = Path("/var/lib/grafana")
+GRAFANA_CONFIGURATION_COMPONENT = "configuration"
+GRAFANA_CONFIGURATION_SOURCE = Path("/etc/grafana")
 GRAFANA_SERVICE = "grafana-server.service"
 
 INFLUXDB_APPLICATION = "influxdb"
@@ -851,6 +853,30 @@ def execute_nut_configuration_recovery(
         services=NUT_SERVICES,
         lock_schema_version=5,
         staging_prefix=".psb-nut-stage-",
+        interactive=interactive,
+        target_override=target_override,
+        manage_service=manage_service,
+    )
+
+
+def execute_grafana_configuration_recovery(
+    package: Path,
+    rollback_destination: Path,
+    rollback_name: str | None = None,
+    interactive: bool = True,
+    target_override: Path | None = None,
+    manage_service: bool = True,
+) -> dict:
+    return _execute_directory_component_recovery(
+        package=package,
+        rollback_destination=rollback_destination,
+        rollback_name=rollback_name,
+        application=GRAFANA_APPLICATION,
+        component=GRAFANA_CONFIGURATION_COMPONENT,
+        canonical_source=GRAFANA_CONFIGURATION_SOURCE,
+        services=(GRAFANA_SERVICE,),
+        lock_schema_version=6,
+        staging_prefix=".psb-grafana-configuration-stage-",
         interactive=interactive,
         target_override=target_override,
         manage_service=manage_service,
