@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Добавлено безопасное восстановление `telegraf/configuration`.
+
 ### Planned
 - Repository cleanup
 - History subsystem

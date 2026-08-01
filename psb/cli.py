@@ -9,7 +9,7 @@ from .modules.host import host_inventory
 from .modules.compare import compare_targets, print_compare_report
 from .modules.recovery import build_recovery_preview, print_recovery_preview, write_recovery_plan
 from .modules.rollback import create_rollback_package
-from .modules.execution import execute_grafana_database_recovery, execute_influxdb_database_recovery, read_recovery_lock, abort_recovery_lock
+from .modules.execution import execute_grafana_database_recovery, execute_influxdb_database_recovery, execute_telegraf_configuration_recovery, read_recovery_lock, abort_recovery_lock
 VERSION="0.9.4"
 
 def require_root(command):
@@ -87,7 +87,7 @@ def recovery_doctor():
     lock=read_recovery_lock()
     add('recovery lock clear', lock is None, 'clear' if lock is None else f"state={lock.get('state','unknown')}")
     overall=all(c['ok'] for c in checks)
-    return {'area':'recovery','ready':overall,'checks':checks,'supported_execute_targets':['grafana/database','influxdb/database']}
+    return {'area':'recovery','ready':overall,'checks':checks,'supported_execute_targets':['grafana/database','influxdb/database','telegraf/configuration']}
 
 def main():
     args=parser().parse_args(); require_root(args.command)
@@ -129,7 +129,7 @@ def main():
                 print('\nPSB Recovery Doctor'); print('-'*88)
                 for c in report['checks']: print(f"{'PASS' if c['ok'] else 'FAIL':4}  {c['name']}: {c['detail']}")
                 print(f"\nRecovery ready: {'YES' if report['ready'] else 'NO'}")
-                print('Supported execute targets: grafana/database, influxdb/database')
+                print('Supported execute targets: grafana/database, influxdb/database, telegraf/configuration')
             return 0 if report['ready'] else 1
         report=doctor(scan_system())
         if args.json: print(json.dumps(report,indent=2))
@@ -197,15 +197,20 @@ def main():
         return 0
     if args.command=='recover':
         if args.execute:
-            supported={("grafana","database"),("influxdb","database")}
+            supported={("grafana","database"),("influxdb","database"),("telegraf","configuration")}
             if (args.application,args.component) not in supported:
-                print('ERROR: v0.9.4 execute mode supports only grafana/database and influxdb/database',file=sys.stderr); return 2
+                print('ERROR: execute mode supports only grafana/database, influxdb/database, and telegraf/configuration',file=sys.stderr); return 2
             if not args.rollback_destination:
                 print('ERROR: --rollback-destination is required with --execute',file=sys.stderr); return 2
             if args.json or args.output or args.create_rollback or args.no_recovery_lock:
                 print('ERROR: --execute cannot be combined with --json, --output, --create-rollback, or --no-recovery-lock',file=sys.stderr); return 2
             try:
-                result=(execute_grafana_database_recovery if args.application=="grafana" else execute_influxdb_database_recovery)(Path(args.backup_path),Path(args.rollback_destination),args.rollback_name)
+                executors={
+                    ("grafana","database"): execute_grafana_database_recovery,
+                    ("influxdb","database"): execute_influxdb_database_recovery,
+                    ("telegraf","configuration"): execute_telegraf_configuration_recovery,
+                }
+                result=executors[(args.application,args.component)](Path(args.backup_path),Path(args.rollback_destination),args.rollback_name)
             except RuntimeError as exc:
                 print(f'ERROR: {exc}',file=sys.stderr); return 1
             print('\nPSB Safe Recovery completed successfully')

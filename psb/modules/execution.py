@@ -27,6 +27,11 @@ INFLUXDB_COMPONENT = "database"
 INFLUXDB_SOURCE = Path("/var/lib/influxdb")
 INFLUXDB_SERVICES = ("influxdb.service", "influxd.service")
 
+TELEGRAF_APPLICATION = "telegraf"
+TELEGRAF_COMPONENT = "configuration"
+TELEGRAF_SOURCE = Path("/etc/telegraf")
+TELEGRAF_SERVICE = "telegraf.service"
+
 
 def _run(command: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(command, text=True, capture_output=True, check=False)
@@ -607,6 +612,170 @@ def execute_influxdb_database_recovery(
         _write_lock(lock)
         if rollback_error:
             raise RuntimeError(f"Recovery failed: {exc}; automatic rollback also failed: {rollback_error}") from exc
+        raise RuntimeError(f"Recovery failed and previous state was restored: {exc}") from exc
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+def execute_telegraf_configuration_recovery(
+    package: Path,
+    rollback_destination: Path,
+    rollback_name: str | None = None,
+    interactive: bool = True,
+    target_override: Path | None = None,
+    manage_service: bool = True,
+) -> dict:
+    package = package.resolve()
+    existing_lock = read_recovery_lock()
+    if existing_lock is not None:
+        raise RuntimeError(
+            f"Recovery lock already exists with state {existing_lock.get('state', 'unknown')}. "
+            "Run psb recovery-status and psb recovery-abort before starting a new recovery."
+        )
+
+    ok, messages = verify_backup(package)
+    if not ok:
+        raise RuntimeError("Source backup verification failed: " + "; ".join(messages))
+
+    preview = build_recovery_preview(package)
+    selected = _selected_action(preview, TELEGRAF_APPLICATION, TELEGRAF_COMPONENT)
+    sources = [Path(item) for item in selected.get("sources", [])]
+    if sources != [TELEGRAF_SOURCE]:
+        raise RuntimeError(f"Unexpected Telegraf configuration source paths: {sources}")
+
+    target = target_override.resolve() if target_override else TELEGRAF_SOURCE
+    if target_override is None and target != TELEGRAF_SOURCE:
+        raise RuntimeError("Telegraf configuration target validation failed")
+    if not target.parent.is_dir():
+        raise RuntimeError(f"Telegraf configuration parent directory does not exist: {target.parent}")
+
+    member, artifact_data = _find_artifact(package, selected)
+    expected_signature, _, _ = _tar_signature(artifact_data)
+    if expected_signature is None:
+        raise RuntimeError("Unable to calculate backup component signature")
+
+    if interactive:
+        _confirm(TELEGRAF_APPLICATION, TELEGRAF_COMPONENT)
+
+    operation_id = str(uuid.uuid4())
+    operation_started_monotonic = time.monotonic()
+    started_at = dt.datetime.now(dt.timezone.utc).isoformat()
+    service_was_active = _service_active(TELEGRAF_SERVICE) if manage_service else False
+    parent = target.parent
+    staging = Path(tempfile.mkdtemp(prefix=".psb-telegraf-stage-", dir=parent))
+    old_path = parent / f".psb-telegraf-old-{operation_id}"
+    restored_installed = False
+    current_moved = False
+    rollback_package: Path | None = None
+    lock: dict = {
+        "schema_version": 4,
+        "state": "preparing",
+        "execution_enabled": False,
+        "operation_id": operation_id,
+        "application": TELEGRAF_APPLICATION,
+        "component": TELEGRAF_COMPONENT,
+        "source_backup": str(package),
+        "artifact_member": member,
+        "target": str(target),
+        "started_at": started_at,
+        "pid": os.getpid(),
+        "service_active_before": service_was_active,
+    }
+    _write_lock(lock)
+
+    try:
+        if manage_service and service_was_active:
+            _service_stop(TELEGRAF_SERVICE)
+
+        selected_for_rollback = json.loads(json.dumps(selected))
+        selected_for_rollback["sources"] = [str(target)]
+        filtered = _filtered_preview(preview, selected_for_rollback)
+        rollback_package, rollback_result = create_rollback_package(
+            filtered, rollback_destination, rollback_name, create_lock=False
+        )
+        rollback_ok, rollback_messages = verify_backup(rollback_package)
+        if not rollback_ok:
+            raise RuntimeError("Rollback verification failed: " + "; ".join(rollback_messages))
+
+        lock.update({
+            "state": "executing",
+            "execution_enabled": True,
+            "rollback_id": rollback_result.get("rollback_id"),
+            "rollback_package": str(rollback_package),
+            "rollback_verified": True,
+        })
+        _write_lock(lock)
+
+        restored = _safe_extract_tar(artifact_data, staging, TELEGRAF_SOURCE)
+        if target.exists():
+            target.rename(old_path)
+            current_moved = True
+        restored.rename(target)
+        restored_installed = True
+
+        installed_signature = _directory_signature_as_source(target, TELEGRAF_SOURCE)
+        if installed_signature != expected_signature:
+            raise RuntimeError("Installed Telegraf configuration checksum does not match backup artifact")
+
+        if manage_service and service_was_active:
+            _service_start(TELEGRAF_SERVICE)
+
+        if current_moved and old_path.exists():
+            shutil.rmtree(old_path)
+            current_moved = False
+
+        duration = round(time.monotonic() - operation_started_monotonic, 3)
+        service_active_after = _service_active(TELEGRAF_SERVICE) if manage_service else None
+        lock.update({
+            "state": "completed",
+            "execution_enabled": False,
+            "completed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "service_active_after": service_active_after,
+            "duration_seconds": duration,
+        })
+        _write_lock(lock)
+        return {
+            "status": "completed",
+            "operation_id": operation_id,
+            "application": TELEGRAF_APPLICATION,
+            "component": TELEGRAF_COMPONENT,
+            "backup": str(package),
+            "rollback_package": str(rollback_package),
+            "rollback_verified": True,
+            "target": str(target),
+            "service_was_active": service_was_active,
+            "service_active_after": service_active_after,
+            "duration_seconds": duration,
+            "lock_path": str(RECOVERY_LOCK),
+        }
+    except Exception as exc:
+        rollback_error = None
+        try:
+            if manage_service and _service_active(TELEGRAF_SERVICE):
+                _service_stop(TELEGRAF_SERVICE)
+            if restored_installed and target.exists():
+                shutil.rmtree(target)
+            if current_moved and old_path.exists():
+                old_path.rename(target)
+                current_moved = False
+            if manage_service and service_was_active:
+                _service_start(TELEGRAF_SERVICE)
+        except Exception as rollback_exc:
+            rollback_error = str(rollback_exc)
+
+        lock.update({
+            "state": "rolled-back" if rollback_error is None else "rollback-failed",
+            "execution_enabled": False,
+            "failed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "error": str(exc),
+            "rollback_error": rollback_error,
+            "duration_seconds": round(time.monotonic() - operation_started_monotonic, 3),
+            "rollback_package": str(rollback_package) if rollback_package else None,
+        })
+        _write_lock(lock)
+        if rollback_error:
+            raise RuntimeError(
+                f"Recovery failed: {exc}; automatic rollback also failed: {rollback_error}"
+            ) from exc
         raise RuntimeError(f"Recovery failed and previous state was restored: {exc}") from exc
     finally:
         shutil.rmtree(staging, ignore_errors=True)
