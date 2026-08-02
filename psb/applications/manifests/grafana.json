@@ -47,6 +47,11 @@
       "kind": "logs"
     }
   ],
+  "recovery_order": [
+    "configuration",
+    "plugins",
+    "database"
+  ],
   "version_detection": {
     "commands": [
       [
