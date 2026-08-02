@@ -117,13 +117,6 @@ def _path_relation(left: Path, right: Path) -> str | None:
         return None
 
 
-def _component_depth(action: dict) -> int:
-    sources = _normalized_sources(action)
-    if not sources:
-        return 0
-    return min(len(source.parts) for source in sources)
-
-
 def _nested_component_dependencies(actions: list[dict]) -> list[dict]:
     dependencies = []
     for left_index, left_action in enumerate(actions):
@@ -166,19 +159,60 @@ def _ambiguous_overlap_conflicts(actions: list[dict]) -> list[dict]:
 
 
 def _physical_execution_order(actions: list[dict]) -> list[dict]:
-    logical_position = {
-        action.get("component_type"): index
-        for index, action in enumerate(actions)
+    by_component = {
+        action.get("component_type"): action
+        for action in actions
     }
-    return sorted(
-        actions,
-        key=lambda action: (
-            _component_depth(action),
-            logical_position.get(action.get("component_type"), 0),
-        ),
-    )
+    logical_order = [
+        action.get("component_type")
+        for action in actions
+    ]
+    dependencies = _nested_component_dependencies(actions)
 
+    children = {
+        component: []
+        for component in logical_order
+    }
+    indegree = {
+        component: 0
+        for component in logical_order
+    }
 
+    for dependency in dependencies:
+        parent = dependency["parent_component"]
+        child = dependency["child_component"]
+        if child not in children[parent]:
+            children[parent].append(child)
+            indegree[child] += 1
+
+    ready = [
+        component
+        for component in logical_order
+        if indegree[component] == 0
+    ]
+    result = []
+
+    while ready:
+        component = ready.pop(0)
+        result.append(by_component[component])
+
+        for child in children[component]:
+            indegree[child] -= 1
+            if indegree[child] == 0:
+                insert_at = len(ready)
+                child_position = logical_order.index(child)
+                for index, ready_component in enumerate(ready):
+                    if logical_order.index(ready_component) > child_position:
+                        insert_at = index
+                        break
+                ready.insert(insert_at, child)
+
+    if len(result) != len(actions):
+        raise RuntimeError(
+            "Nested component dependency graph contains a cycle"
+        )
+
+    return result
 def _rollback_root_components(actions: list[dict]) -> list[str]:
     roots = []
     for action in actions:
@@ -323,7 +357,7 @@ def prepare_application_rollback(
     filtered = _transaction_preview(
         preview,
         application,
-        plan["writable_components"],
+        plan["rollback_root_components"],
     )
     rollback_package, rollback_result = create_rollback_package(
         filtered,
@@ -387,16 +421,21 @@ def execute_application_transaction(
         rollback_name,
     )
     plan = prepared["plan"]
-    component_types = plan["writable_components"]
+    logical_component_types = plan["writable_components"]
+    component_types = plan["physical_execution_order"]
     if interactive:
         _confirm_application(application, component_types)
 
     preview = build_recovery_preview(package)
-    ordered_actions = [
-        action
+    actions_by_type = {
+        action.get("component_type"): action
         for action in _ordered_actions(preview, application)
-        if action.get("component_type") in component_types
+        if action.get("component_type") in logical_component_types
         and action.get("action") in WRITABLE_ACTIONS
+    }
+    ordered_actions = [
+        actions_by_type[component_type]
+        for component_type in component_types
     ]
 
     services = APPLICATION_SERVICES[application]
@@ -418,7 +457,9 @@ def execute_application_transaction(
         "execution_enabled": False,
         "operation_id": operation_id,
         "application": application,
-        "components": component_types,
+        "components": logical_component_types,
+        "physical_execution_order": component_types,
+        "rollback_root_components": plan["rollback_root_components"],
         "completed_components": [],
         "source_backup": str(package),
         "rollback_package": prepared["rollback_package"],
@@ -522,7 +563,9 @@ def execute_application_transaction(
             "status": "completed",
             "operation_id": operation_id,
             "application": application,
-            "components": component_types,
+            "components": logical_component_types,
+            "physical_execution_order": component_types,
+            "rollback_root_components": plan["rollback_root_components"],
             "rollback_package": prepared["rollback_package"],
             "rollback_verified": True,
             "services_active_before": active_services,
