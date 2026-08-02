@@ -9,6 +9,10 @@ from .modules.host import host_inventory
 from .modules.compare import compare_targets, print_compare_report
 from .modules.recovery import build_recovery_preview, print_recovery_preview, write_recovery_plan
 from .modules.rollback import create_rollback_package
+from .applications.orchestrator import (
+    build_application_transaction_plan,
+    execute_application_transaction,
+)
 from .modules.execution import execute_grafana_database_recovery, execute_grafana_configuration_recovery, execute_grafana_plugins_recovery, execute_influxdb_database_recovery, execute_influxdb_configuration_recovery, execute_telegraf_configuration_recovery, execute_telegraf_state_recovery, execute_nut_configuration_recovery, execute_nut_state_recovery, execute_nut_systemd_recovery, read_recovery_lock, abort_recovery_lock
 VERSION="0.9.4"
 
@@ -30,7 +34,7 @@ def parser():
     r=sub.add_parser('restore-plan'); r.add_argument('backup_path'); r.add_argument('--output')
     i=sub.add_parser('inspect'); i.add_argument('backup_path'); i.add_argument('--json',action='store_true')
     c=sub.add_parser('compare'); c.add_argument('left'); c.add_argument('right',nargs='?'); c.add_argument('--json',action='store_true'); c.add_argument('--output')
-    rec=sub.add_parser('recover'); rec.add_argument('backup_path'); rec.add_argument('--json',action='store_true'); rec.add_argument('--output'); rec.add_argument('--create-rollback',action='store_true'); rec.add_argument('--rollback-destination'); rec.add_argument('--rollback-name'); rec.add_argument('--no-recovery-lock',action='store_true'); rec.add_argument('--application'); rec.add_argument('--component'); rec.add_argument('--execute',action='store_true')
+    rec=sub.add_parser('recover'); rec.add_argument('backup_path'); rec.add_argument('--json',action='store_true'); rec.add_argument('--output'); rec.add_argument('--create-rollback',action='store_true'); rec.add_argument('--rollback-destination'); rec.add_argument('--rollback-name'); rec.add_argument('--no-recovery-lock',action='store_true'); rec.add_argument('--application'); rec.add_argument('--component'); rec.add_argument('--all',dest='all_components',action='store_true'); rec.add_argument('--execute',action='store_true')
     sub.add_parser('recovery-status')
     sub.add_parser('recovery-abort')
     return p
@@ -202,6 +206,58 @@ def main():
         else:
             print('No recovery lock was present.')
         return 0
+    if args.command=='recover':
+        if args.all_components:
+            if not args.application:
+                print('ERROR: --application is required with --all',file=sys.stderr); return 2
+            if args.component:
+                print('ERROR: --component cannot be used with --all',file=sys.stderr); return 2
+            if args.create_rollback or args.no_recovery_lock:
+                print('ERROR: --all does not support --create-rollback or --no-recovery-lock',file=sys.stderr); return 2
+            try:
+                if not args.execute:
+                    plan=build_application_transaction_plan(Path(args.backup_path),args.application)
+                    if args.output:
+                        Path(args.output).resolve().write_text(json.dumps(plan,indent=2,sort_keys=True),encoding='utf-8')
+                        print(f"Application recovery plan written: {Path(args.output).resolve()}")
+                    elif args.json:
+                        print(json.dumps(plan,indent=2,sort_keys=True))
+                    else:
+                        print('\nPSB Application Recovery Plan')
+                        print('='*88)
+                        print(f"Application: {plan['application']}")
+                        print(f"Package: {plan['package']}")
+                        print(f"Blocked: {'YES' if plan['blocked'] else 'NO'}")
+                        print('\nComponents:')
+                        for index,item in enumerate(plan['components'],start=1):
+                            print(f"  {index}. {item['component_type']}: {item['action']} ({item.get('reason') or 'no reason'})")
+                        if plan['overlap_conflicts']:
+                            print('\nOverlap conflicts:')
+                            for item in plan['overlap_conflicts']:
+                                print(f"  {item['left_component']}:{item['left_source']} overlaps {item['right_component']}:{item['right_source']}")
+                        print('\nPreview only: no files were changed.')
+                    return 1 if plan['blocked'] else 0
+                if not args.rollback_destination:
+                    print('ERROR: --rollback-destination is required with --all --execute',file=sys.stderr); return 2
+                if args.json or args.output:
+                    print('ERROR: --json and --output are not supported with --all --execute',file=sys.stderr); return 2
+                result=execute_application_transaction(
+                    Path(args.backup_path),
+                    args.application,
+                    Path(args.rollback_destination),
+                    args.rollback_name,
+                )
+                print('\nPSB Application Recovery completed successfully')
+                print('='*72)
+                print(f"Application: {result['application']}")
+                print(f"Components: {', '.join(result['components'])}")
+                print(f"Rollback package: {result['rollback_package']}")
+                print(f"Rollback verified: {result['rollback_verified']}")
+                print(f"Duration: {result['duration_seconds']} seconds")
+                print(f"Recovery lock: {result['lock_path']}")
+                return 0
+            except Exception as exc:
+                print(f"ERROR: {exc}",file=sys.stderr); return 1
     if args.command=='recover':
         if args.execute:
             supported={("grafana","database"),("grafana","configuration"),("grafana","plugins"),("influxdb","database"),("influxdb","configuration"),("telegraf","configuration"),("telegraf","state"),("nut","configuration"),("nut","state"),("nut","systemd")}
