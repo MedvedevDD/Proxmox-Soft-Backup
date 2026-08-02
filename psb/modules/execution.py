@@ -45,6 +45,8 @@ NUT_COMPONENT = "configuration"
 NUT_SOURCE = Path("/etc/nut")
 NUT_STATE_COMPONENT = "state"
 NUT_STATE_SOURCE = Path("/var/lib/nut")
+NUT_SYSTEMD_COMPONENT = "systemd"
+NUT_SYSTEMD_SOURCE = Path("/etc/systemd/system/nut-driver@ippon.service.d")
 # Stop consumers before providers. Start order is reversed by the generic executor.
 NUT_SERVICES = ("nut-monitor.service", "nut-server.service", "nut-driver.target")
 
@@ -646,6 +648,7 @@ def _execute_directory_component_recovery(
     interactive: bool = True,
     target_override: Path | None = None,
     manage_service: bool = True,
+    daemon_reload: bool = False,
 ) -> dict:
     package = package.resolve()
     existing_lock = read_recovery_lock()
@@ -748,6 +751,14 @@ def _execute_directory_component_recovery(
                 f"Installed {application}/{component} checksum does not match backup artifact"
             )
 
+        if daemon_reload:
+            reload_result = _run(["systemctl", "daemon-reload"])
+            if reload_result.returncode != 0:
+                raise RuntimeError(
+                    "systemctl daemon-reload failed: "
+                    + (reload_result.stderr.strip() or reload_result.stdout.strip())
+                )
+
         if manage_service and active_services:
             # Providers are typically listed after consumers, so restart in reverse order.
             _start_services(list(reversed(active_services)))
@@ -793,6 +804,13 @@ def _execute_directory_component_recovery(
             if current_moved and old_path.exists():
                 old_path.rename(target)
                 current_moved = False
+            if daemon_reload:
+                reload_result = _run(["systemctl", "daemon-reload"])
+                if reload_result.returncode != 0:
+                    raise RuntimeError(
+                        "systemctl daemon-reload failed during rollback: "
+                        + (reload_result.stderr.strip() or reload_result.stdout.strip())
+                    )
             if manage_service and active_services:
                 _start_services(list(reversed(active_services)))
         except Exception as rollback_exc:
@@ -982,4 +1000,28 @@ def execute_nut_state_recovery(
         interactive=interactive,
         target_override=target_override,
         manage_service=manage_service,
+    )
+
+def execute_nut_systemd_recovery(
+    package: Path,
+    rollback_destination: Path,
+    rollback_name: str | None = None,
+    interactive: bool = True,
+    target_override: Path | None = None,
+    manage_service: bool = True,
+) -> dict:
+    return _execute_directory_component_recovery(
+        package=package,
+        rollback_destination=rollback_destination,
+        rollback_name=rollback_name,
+        application=NUT_APPLICATION,
+        component=NUT_SYSTEMD_COMPONENT,
+        canonical_source=NUT_SYSTEMD_SOURCE,
+        services=NUT_SERVICES,
+        lock_schema_version=11,
+        staging_prefix=".psb-nut-systemd-stage-",
+        interactive=interactive,
+        target_override=target_override,
+        manage_service=manage_service,
+        daemon_reload=True,
     )
