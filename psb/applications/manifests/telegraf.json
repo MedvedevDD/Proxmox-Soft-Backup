@@ -46,6 +46,10 @@
       "kind": "logs"
     }
   ],
+  "recovery_order": [
+    "configuration",
+    "state"
+  ],
   "version_detection": {
     "commands": [
       [

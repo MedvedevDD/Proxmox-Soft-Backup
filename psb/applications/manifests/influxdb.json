@@ -75,6 +75,10 @@
       ]
     }
   ],
+  "recovery_order": [
+    "configuration",
+    "database"
+  ],
   "version_detection": {
     "commands": [
       [

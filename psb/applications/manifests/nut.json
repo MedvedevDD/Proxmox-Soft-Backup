@@ -42,6 +42,11 @@
       "kind": "logs"
     }
   ],
+  "recovery_order": [
+    "configuration",
+    "systemd",
+    "state"
+  ],
   "version_detection": {
     "commands": [
       [
