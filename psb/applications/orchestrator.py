@@ -102,35 +102,102 @@ def _normalized_sources(action: dict) -> list[Path]:
     return [Path(source).resolve() for source in action.get("sources", [])]
 
 
-def _paths_overlap(left: Path, right: Path) -> bool:
+def _path_relation(left: Path, right: Path) -> str | None:
     if left == right:
-        return True
+        return "equal"
     try:
         left.relative_to(right)
-        return True
+        return "left-inside-right"
     except ValueError:
         pass
     try:
         right.relative_to(left)
-        return True
+        return "right-inside-left"
     except ValueError:
-        return False
+        return None
 
 
-def _overlap_conflicts(actions: list[dict]) -> list[dict]:
+def _component_depth(action: dict) -> int:
+    sources = _normalized_sources(action)
+    if not sources:
+        return 0
+    return min(len(source.parts) for source in sources)
+
+
+def _nested_component_dependencies(actions: list[dict]) -> list[dict]:
+    dependencies = []
+    for left_index, left_action in enumerate(actions):
+        for right_action in actions[left_index + 1:]:
+            for left_source in _normalized_sources(left_action):
+                for right_source in _normalized_sources(right_action):
+                    relation = _path_relation(left_source, right_source)
+                    if relation == "left-inside-right":
+                        dependencies.append({
+                            "parent_component": right_action.get("component_type"),
+                            "parent_source": str(right_source),
+                            "child_component": left_action.get("component_type"),
+                            "child_source": str(left_source),
+                        })
+                    elif relation == "right-inside-left":
+                        dependencies.append({
+                            "parent_component": left_action.get("component_type"),
+                            "parent_source": str(left_source),
+                            "child_component": right_action.get("component_type"),
+                            "child_source": str(right_source),
+                        })
+    return dependencies
+
+
+def _ambiguous_overlap_conflicts(actions: list[dict]) -> list[dict]:
     conflicts = []
     for left_index, left_action in enumerate(actions):
         for right_action in actions[left_index + 1:]:
             for left_source in _normalized_sources(left_action):
                 for right_source in _normalized_sources(right_action):
-                    if _paths_overlap(left_source, right_source):
+                    if _path_relation(left_source, right_source) == "equal":
                         conflicts.append({
                             "left_component": left_action.get("component_type"),
                             "left_source": str(left_source),
                             "right_component": right_action.get("component_type"),
                             "right_source": str(right_source),
+                            "reason": "components use the same target path",
                         })
     return conflicts
+
+
+def _physical_execution_order(actions: list[dict]) -> list[dict]:
+    logical_position = {
+        action.get("component_type"): index
+        for index, action in enumerate(actions)
+    }
+    return sorted(
+        actions,
+        key=lambda action: (
+            _component_depth(action),
+            logical_position.get(action.get("component_type"), 0),
+        ),
+    )
+
+
+def _rollback_root_components(actions: list[dict]) -> list[str]:
+    roots = []
+    for action in actions:
+        covered = False
+        for other in actions:
+            if other is action:
+                continue
+            for source in _normalized_sources(action):
+                for other_source in _normalized_sources(other):
+                    if _path_relation(source, other_source) == "left-inside-right":
+                        covered = True
+                        break
+                if covered:
+                    break
+            if covered:
+                break
+        if not covered:
+            roots.append(action.get("component_type"))
+    return roots
 
 
 def build_application_transaction_plan(package: Path, application: str) -> dict:
@@ -157,10 +224,12 @@ def build_application_transaction_plan(package: Path, application: str) -> dict:
         if action.get("action") in WRITABLE_ACTIONS
         and action.get("rollback_required")
     ]
-    conflicts = _overlap_conflicts(writable)
+    dependencies = _nested_component_dependencies(writable)
+    conflicts = _ambiguous_overlap_conflicts(writable)
+    physical_order = _physical_execution_order(writable)
 
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "application": application,
         "package": str(package),
         "package_valid": True,
@@ -180,10 +249,15 @@ def build_application_transaction_plan(package: Path, application: str) -> dict:
         "writable_components": [
             action.get("component_type") for action in writable
         ],
+        "physical_execution_order": [
+            action.get("component_type") for action in physical_order
+        ],
+        "nested_dependencies": dependencies,
+        "rollback_root_components": _rollback_root_components(writable),
         "overlap_conflicts": conflicts,
         "blocked": bool(conflicts),
         "block_reason": (
-            "Overlapping component targets require an explicit transaction strategy"
+            "Ambiguous component targets require an explicit transaction strategy"
             if conflicts else None
         ),
     }
