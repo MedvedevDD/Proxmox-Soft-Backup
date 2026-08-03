@@ -62,3 +62,43 @@ InfluxDB -> Grafana
 ```
 
 На этом этапе добавляется внутренний API без CLI.
+
+## Multi-Application CLI
+
+Пользовательский CLI использует параметр `--applications`.
+
+Preview одного приложения с автоматическим включением зависимостей:
+
+```bash
+psb recover backup.psb --applications grafana
+```
+
+Preview нескольких приложений:
+
+```bash
+psb recover backup.psb --applications grafana,telegraf
+```
+
+Preview всех поддерживаемых transaction applications:
+
+```bash
+psb recover backup.psb --applications all
+```
+
+Выполнение:
+
+```bash
+psb recover backup.psb \
+  --applications grafana \
+  --execute \
+  --rollback-destination /mnt/backup
+```
+
+Для выполнения требуется тройное подтверждение, включая точную фразу:
+
+```text
+RESTORE MULTI APPLICATIONS
+```
+
+`--applications` нельзя сочетать с `--application`, `--component` или `--all`.
+Режимы `--json` и `--output` доступны только для Preview.
