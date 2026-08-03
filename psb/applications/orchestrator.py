@@ -414,7 +414,8 @@ def _component_staging_parent(
     return outermost_target.parent
 
 
-def _daemon_reload() -> None:    result = _run(["systemctl", "daemon-reload"])
+def _daemon_reload() -> None:
+    result = _run(["systemctl", "daemon-reload"])
     if result.returncode != 0:
         raise RuntimeError(
             "systemctl daemon-reload failed: "
