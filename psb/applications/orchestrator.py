@@ -390,8 +390,31 @@ def _confirm_application(application: str, components: list[str]) -> None:
         raise RuntimeError("Recovery cancelled at confirmation 3")
 
 
-def _daemon_reload() -> None:
-    result = _run(["systemctl", "daemon-reload"])
+def _component_staging_parent(
+    target: Path,
+    transaction_targets: list[Path],
+) -> Path:
+    containing_targets = [
+        candidate
+        for candidate in transaction_targets
+        if _path_relation(target, candidate) in {
+            "equal",
+            "left-inside-right",
+        }
+    ]
+    if not containing_targets:
+        raise RuntimeError(
+            f"Unable to determine staging parent for target: {target}"
+        )
+
+    outermost_target = min(
+        containing_targets,
+        key=lambda candidate: len(candidate.parts),
+    )
+    return outermost_target.parent
+
+
+def _daemon_reload() -> None:    result = _run(["systemctl", "daemon-reload"])
     if result.returncode != 0:
         raise RuntimeError(
             "systemctl daemon-reload failed: "
@@ -437,7 +460,10 @@ def execute_application_transaction(
         actions_by_type[component_type]
         for component_type in component_types
     ]
-
+    transaction_targets = [
+        APPLICATION_TARGETS[application][action["component_type"]]
+        for action in ordered_actions
+    ]
     services = APPLICATION_SERVICES[application]
     active_services = _active_services(services) if manage_services else []
     operation_id = str(uuid.uuid4())
@@ -494,7 +520,7 @@ def execute_application_transaction(
             component_stage = Path(
                 tempfile.mkdtemp(
                     prefix=f".psb-{application}-{component_type}-stage-",
-                    dir=target.parent,
+                    dir=_component_staging_parent(target, transaction_targets),
                 )
             )
             stage_directories.append(component_stage)
