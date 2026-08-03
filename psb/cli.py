@@ -13,6 +13,12 @@ from .applications.orchestrator import (
     build_application_transaction_plan,
     execute_application_transaction,
 )
+from .applications.multi_recovery_plan import (
+    build_multi_application_plan,
+)
+from .applications.multi_orchestrator import (
+    execute_multi_application_transaction,
+)
 from .modules.execution import execute_grafana_database_recovery, execute_grafana_configuration_recovery, execute_grafana_plugins_recovery, execute_influxdb_database_recovery, execute_influxdb_configuration_recovery, execute_telegraf_configuration_recovery, execute_telegraf_state_recovery, execute_nut_configuration_recovery, execute_nut_state_recovery, execute_nut_systemd_recovery, read_recovery_lock, abort_recovery_lock
 VERSION="0.9.4"
 
@@ -34,7 +40,7 @@ def parser():
     r=sub.add_parser('restore-plan'); r.add_argument('backup_path'); r.add_argument('--output')
     i=sub.add_parser('inspect'); i.add_argument('backup_path'); i.add_argument('--json',action='store_true')
     c=sub.add_parser('compare'); c.add_argument('left'); c.add_argument('right',nargs='?'); c.add_argument('--json',action='store_true'); c.add_argument('--output')
-    rec=sub.add_parser('recover'); rec.add_argument('backup_path'); rec.add_argument('--json',action='store_true'); rec.add_argument('--output'); rec.add_argument('--create-rollback',action='store_true'); rec.add_argument('--rollback-destination'); rec.add_argument('--rollback-name'); rec.add_argument('--no-recovery-lock',action='store_true'); rec.add_argument('--application'); rec.add_argument('--component'); rec.add_argument('--all',dest='all_components',action='store_true'); rec.add_argument('--execute',action='store_true')
+    rec=sub.add_parser('recover'); rec.add_argument('backup_path'); rec.add_argument('--json',action='store_true'); rec.add_argument('--output'); rec.add_argument('--create-rollback',action='store_true'); rec.add_argument('--rollback-destination'); rec.add_argument('--rollback-name'); rec.add_argument('--no-recovery-lock',action='store_true'); rec.add_argument('--application'); rec.add_argument('--applications'); rec.add_argument('--component'); rec.add_argument('--all',dest='all_components',action='store_true'); rec.add_argument('--execute',action='store_true')
     sub.add_parser('recovery-status')
     sub.add_parser('recovery-abort')
     return p
@@ -207,6 +213,171 @@ def main():
             print('No recovery lock was present.')
         return 0
     if args.command=='recover':
+        if args.applications:
+            if args.application or args.component or args.all_components:
+                print(
+                    "ERROR: --applications cannot be combined with "
+                    "--application, --component, or --all",
+                    file=sys.stderr,
+                )
+                return 2
+            if args.create_rollback or args.no_recovery_lock:
+                print(
+                    "ERROR: --applications does not support "
+                    "--create-rollback or --no-recovery-lock",
+                    file=sys.stderr,
+                )
+                return 2
+
+            raw_applications = [
+                item.strip()
+                for item in args.applications.split(",")
+                if item.strip()
+            ]
+            if not raw_applications:
+                print(
+                    "ERROR: --applications requires a comma-separated list "
+                    "or the value all",
+                    file=sys.stderr,
+                )
+                return 2
+
+            selected_applications = (
+                None
+                if len(raw_applications) == 1
+                and raw_applications[0].lower() == "all"
+                else raw_applications
+            )
+
+            try:
+                if not args.execute:
+                    plan = build_multi_application_plan(
+                        Path(args.backup_path),
+                        selected_applications,
+                    )
+                    if args.output:
+                        output_path = Path(args.output).resolve()
+                        output_path.write_text(
+                            json.dumps(plan, indent=2, sort_keys=True),
+                            encoding="utf-8",
+                        )
+                        print(
+                            "Multi-application recovery plan written: "
+                            f"{output_path}"
+                        )
+                    elif args.json:
+                        print(json.dumps(plan, indent=2, sort_keys=True))
+                    else:
+                        print("\nPSB Multi-Application Recovery Plan")
+                        print("=" * 88)
+                        print(f"Package: {plan['package']}")
+                        print(
+                            "Requested: "
+                            + ", ".join(plan["requested_applications"])
+                        )
+                        print(
+                            "Included: "
+                            + " -> ".join(
+                                plan["physical_application_order"]
+                            )
+                        )
+                        writable = (
+                            ", ".join(plan["writable_applications"])
+                            or "none"
+                        )
+                        print(f"Writable: {writable}")
+                        print(
+                            "Blocked: "
+                            + ("YES" if plan["blocked"] else "NO")
+                        )
+                        print("\nApplications:")
+                        for app_plan in plan["application_plans"]:
+                            components = (
+                                " -> ".join(
+                                    app_plan[
+                                        "physical_execution_order"
+                                    ]
+                                )
+                                or "nothing to restore"
+                            )
+                            print(
+                                f"  {app_plan['application']}: "
+                                f"{components}"
+                            )
+                        if plan["blocked_applications"]:
+                            print("\nBlocked applications:")
+                            for application in plan[
+                                "blocked_applications"
+                            ]:
+                                print(f"  {application}")
+                        print(
+                            "\nPreview only: no files were changed."
+                        )
+                    return 1 if plan["blocked"] else 0
+
+                if not args.rollback_destination:
+                    print(
+                        "ERROR: --rollback-destination is required "
+                        "with --applications --execute",
+                        file=sys.stderr,
+                    )
+                    return 2
+                if args.json or args.output:
+                    print(
+                        "ERROR: --json and --output are not supported "
+                        "with --applications --execute",
+                        file=sys.stderr,
+                    )
+                    return 2
+
+                result = execute_multi_application_transaction(
+                    Path(args.backup_path),
+                    selected_applications,
+                    Path(args.rollback_destination),
+                    args.rollback_name,
+                )
+                print(
+                    "\nPSB Multi-Application Recovery "
+                    "completed successfully"
+                )
+                print("=" * 72)
+                print(
+                    "Applications: "
+                    + " -> ".join(
+                        result["physical_application_order"]
+                    )
+                )
+                print("\nCompleted components:")
+                for application in result[
+                    "physical_application_order"
+                ]:
+                    components = result[
+                        "completed_components"
+                    ].get(application, [])
+                    print(
+                        f"  {application}: "
+                        + (
+                            ", ".join(components)
+                            if components
+                            else "none"
+                        )
+                    )
+                print(
+                    "Rollback package: "
+                    f"{result['rollback_package']}"
+                )
+                print(
+                    "Rollback verified: "
+                    f"{result['rollback_verified']}"
+                )
+                print(
+                    f"Duration: {result['duration_seconds']} seconds"
+                )
+                print(f"Recovery lock: {result['lock_path']}")
+                return 0
+            except Exception as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 1
         if args.all_components:
             if not args.application:
                 print('ERROR: --application is required with --all',file=sys.stderr); return 2

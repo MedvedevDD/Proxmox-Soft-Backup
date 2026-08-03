@@ -25,6 +25,38 @@ def _validate_recovery_order(data: dict, path: Path) -> None:
         )
 
 
+def _validate_dependencies(manifests: list[dict]) -> None:
+    known = {manifest["id"] for manifest in manifests}
+
+    for manifest in manifests:
+        dependencies = manifest.get("dependencies", [])
+        if not isinstance(dependencies, list):
+            raise ValueError(
+                "Invalid dependencies in application manifest: "
+                + manifest["manifest_path"]
+            )
+        if len(dependencies) != len(set(dependencies)):
+            raise ValueError(
+                "Duplicate application dependency: "
+                + manifest["manifest_path"]
+            )
+        if manifest["id"] in dependencies:
+            raise ValueError(
+                "Application cannot depend on itself: "
+                + manifest["manifest_path"]
+            )
+
+        unknown = [
+            dependency
+            for dependency in dependencies
+            if dependency not in known
+        ]
+        if unknown:
+            raise ValueError(
+                f"Unknown application dependencies for "
+                f"{manifest['id']}: {unknown}"
+            )
+
 def load_manifests() -> list[dict]:
     manifests = []
     for path in sorted(MANIFEST_DIR.glob("*.json")):
@@ -34,4 +66,6 @@ def load_manifests() -> list[dict]:
         _validate_recovery_order(data, path)
         data["manifest_path"] = str(path)
         manifests.append(data)
+
+    _validate_dependencies(manifests)
     return manifests
